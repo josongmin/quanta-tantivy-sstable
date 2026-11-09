@@ -2,19 +2,20 @@
 
 # Quanta Tantivy SSTable
 
+<p align="center"><a href="#engineering-highlights">Engineering</a> · <a href="#architecture-at-a-glance">Architecture</a> · <a href="#development-and-verification">Get started</a> · <a href="#quanta-extension">Reference</a></p>
+
 A narrow, budget-aware patch of upstream `tantivy-sstable` **0.3.0**, used by Tantivy 0.22.1. It adds caller-admitted ordinal-to-term decoding while preserving the serialized SSTable format.
 
 This repository is a derivative of the upstream crate, not an independently authored SSTable implementation. [AUTHORS](AUTHORS), [LICENSE](LICENSE), and [quanta-provenance.json](quanta-provenance.json) retain authorship, MIT licensing, and original file digests.
 
-
 ## Engineering highlights
 
-| Mechanism | Contract |
-| :--- | :--- |
-| Budgeted ordinal lookup | `Dictionary<VoidSSTable>::ord_to_term_budgeted` accepts a fallible reservation callback before encoded I/O and decode workspace allocation. |
-| Guard-carrying result | A successful lookup returns the decoded term together with the caller's reservation guard, preserving the caller's accounting lifetime. |
-| Typed SSTable values | The upstream format separates prefix-compressed keys from value-specific codecs. |
-| Block-level navigation | SSTable indexes identify blocks; dictionaries and streamers expose point and ordered access paths. |
+| Mechanism | Contract | Source |
+| :--- | :--- | :--- |
+| Budgeted ordinal lookup | `Dictionary<VoidSSTable>::ord_to_term_budgeted` accepts a fallible reservation callback before encoded I/O and decode workspace allocation. | [Dictionary](src/dictionary.rs) |
+| Guard-carrying result | A successful lookup returns the decoded term together with the caller's reservation guard, preserving the caller's accounting lifetime. | [Guarded lookup](src/dictionary.rs) |
+| Typed SSTable values | The upstream format separates prefix-compressed keys from value-specific codecs. | [Public types](src/lib.rs) |
+| Block-level navigation | SSTable indexes identify blocks; dictionaries and streamers expose point and ordered access paths. | [Block index](src/sstable_index_v3.rs) |
 
 ```mermaid
 flowchart LR
@@ -25,7 +26,6 @@ flowchart LR
 ```
 
 The reservation callback is supplied by the consumer. This patch is not a global allocator or a complete memory-budgeting runtime. See the [dictionary implementation](src/dictionary.rs), [block reader](src/block_reader.rs), and [public exports](src/lib.rs).
-
 
 ## Architecture at a glance
 
@@ -68,6 +68,9 @@ The integration regressions belong to `quanta-index-lexical` L3 tests in [Quanta
 ---
 
 ## Upstream SSTable reference
+
+<details>
+<summary><strong>Read the upstream SSTable format reference</strong></summary>
 
 The `tantivy-sstable` crate is yet another sstable crate.
 
@@ -239,3 +242,7 @@ bytes, which isn't negligible for a table containing very few keys.
 To limit the impact of that constant cost, single block sstable omit the Fst and BlockAddrStore from
 their index. Instead a block with first ordinal of 0, range start of 0 and range end of IndexOffset
 is implicitly used for every operations.
+
+</details>
+
+<p align="center"><sub><a href="https://github.com/josongmin">Project map</a> · <a href="#engineering-highlights">Back to overview</a></sub></p>
