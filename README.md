@@ -1,8 +1,45 @@
-# SSTable
+# Quanta Tantivy SSTable
+
+A narrow, budget-aware patch of upstream `tantivy-sstable` **0.3.0**, used by Tantivy 0.22.1. It adds caller-admitted ordinal-to-term decoding while preserving the serialized SSTable format.
+
+This repository is a derivative of the upstream crate, not an independently authored SSTable implementation. [AUTHORS](AUTHORS), [LICENSE](LICENSE), and [quanta-provenance.json](quanta-provenance.json) retain authorship, MIT licensing, and original file digests.
+
+## Quanta extension
+
+`Dictionary<VoidSSTable>::ord_to_term_budgeted` reserves three stages through the caller's callback:
+
+1. Encoded block I/O.
+2. Decode workspace, including the bulk zstd context.
+3. Exact retained output.
+
+The returned guard accompanies the output. Temporary guards remain live through decoding and output allocation. Missing ordinals allocate nothing; refused reservations fail before the affected operation.
+
+Bounds are owned by the codec. Unknown, overflowing, malformed, or truncated lengths are rejected instead of being interpreted as valid sizes. Valid-key ordering and the wire format remain unchanged.
+
+## Contract limits
+
+The budget covers requested logical buffer capacity and the bulk zstd context. It excludes allocator metadata/reallocation internals, index opening, query preparation, caches, unrelated payloads, and process RSS. The API assumes an already opened dictionary; it does not harden every upstream parser against arbitrary bytes.
+
+Consumers patch the exact package to a full Git revision. Do not substitute an unpinned moving branch in a reproducible consumer configuration.
+
+## Development and verification
+
+```sh
+cargo test
+```
+
+The integration regressions belong to `quanta-index-lexical` L3 tests in [Quanta Index](https://github.com/josongmin/quanta-index): reservation refusal at each stage, retained-guard lifetime, compressed predecessor workspace, typed collector refusal, and malformed deltas. Local crate tests and consumer integration remain separate evidence scopes.
+
+[QUANTA.md](QUANTA.md) documents the patch contract and upgrade obligations. Revalidate decoder/context bounds and Rust `Vec` capacity assumptions when updating upstream.
+
+---
+
+## Upstream SSTable reference
 
 The `tantivy-sstable` crate is yet another sstable crate.
 
 It has been designed to be used in `quickwit`:
+
 - as an alternative to the default tantivy fst dictionary.
 - as a way to store the column index for dynamic fast fields.
 
@@ -15,84 +52,97 @@ crate only requires a single fetch.
 Right now, the block index and the default block size have been thought
 for quickwit, and the performance of a get is very bad.
 
-# Sorted strings?
+## Sorted strings
 
 SSTable stands for Sorted String Table.
 Strings have to be insert in sorted order.
 
 That sorted order is used in different ways:
+
 - it makes gets and streaming ranges of keys
 possible.
 - it allows incremental encoding of the keys
 - the front compression is leveraged to optimize
 the intersection with an automaton
 
-# On disk format
+## On-disk format
 
 Overview of the SSTable format. Unless noted otherwise, numbers are little-endian.
 
 ### SSTable
-```
+
+```text
 +-------+-------+-----+--------+
 | Block | Block | ... | Footer |
 +-------+-------+-----+--------+
 |----( # of blocks)---|
 ```
+
 - Block(`SSTBlock`): list of independent block, terminated by a single empty block.
 - Footer(`SSTFooter`)
 
 ### SSTBlock
-```
+
+```text
 +----------+----------+--------+-------+-------+-----+
 | BlockLen | Compress | Values | Delta | Delta | ... |
 +----------+----------+--------+-------+-------+-----+
                       |        |----( # of deltas)---|
                       |------(maybe compressed)------|
 ```
+
 - BlockLen(u32): length of the block, including the compress byte.
 - Compress(u8): indicate whether block is compressed. 0 if not compressed, 1 if compressed.
 - Values: an application defined format storing a sequence of value, capable of determining it own length
 - Delta
 
 ### Delta
-```
+
+```text
 +---------+--------+
 | KeepAdd | Suffix |
 +---------+--------+
 ```
+
 - KeepAdd
 - Suffix: KeepAdd.add bytes of key suffix
 
 ### KeepAdd
+
 KeepAdd can be represented in two different representation, a very compact 1byte one which is enough for most usage, and a longer variable-len one when required
 
 When keep < 16 and add < 16
-```
+
+```text
 +-----+------+
 | Add | Keep |
 +-----+------+
 ```
+
 - Add(u4): number of bytes to push
 - Keep(u4): number of bytes to pop
 
 Otherwise:
-```
+
+```text
 +------+------+-----+
 | 0x01 | Keep | Add |
 +------+------+-----+
 ```
+
 - Add(VInt): number of bytes to push
 - Keep(VInt): number of bytes to pop
-
 
 Note: as the SSTable does not support redundant keys, there is no ambiguity between both representation. Add is always guaranteed to be non-zero, except for the very first key of an SSTable, where Keep is guaranteed to be zero.
 
 ### SSTFooter
-```
+
+```text
 +-----+----------------+-------------+-------------+---------+---------+
 | Fst | BlockAddrStore | StoreOffset | IndexOffset | NumTerm | Version |
 +-----+----------------+-------------+-------------+---------+---------+
 ```
+
 - Fst(Fst): finite state transducer mapping keys to a block number
 - BlockAddrStore(BlockAddrStore): store mapping a block number to its BlockAddr
 - StoreOffset(u64): Offset to start of the BlockAddrStore. If zero, see the SingleBlockSStable section
@@ -148,7 +198,6 @@ range\_start := range\_prediction + range\_derivation
 The same computation can be done for ordinal.
 
 Note that `range_derivation` can take negative value. `RangeStartDelta` is just its translation to a positive range.
-
 
 ## SingleBlockSStable
 
