@@ -1,8 +1,41 @@
+<p align="center"><img src="readme-banner.svg" alt="Quanta / Tantivy SSTable — A budget-aware patch with the upstream storage-format reference." width="100%"></p>
+
 # Quanta Tantivy SSTable
 
 A narrow, budget-aware patch of upstream `tantivy-sstable` **0.3.0**, used by Tantivy 0.22.1. It adds caller-admitted ordinal-to-term decoding while preserving the serialized SSTable format.
 
 This repository is a derivative of the upstream crate, not an independently authored SSTable implementation. [AUTHORS](AUTHORS), [LICENSE](LICENSE), and [quanta-provenance.json](quanta-provenance.json) retain authorship, MIT licensing, and original file digests.
+
+
+## Engineering highlights
+
+| Mechanism | Contract |
+| :--- | :--- |
+| Budgeted ordinal lookup | `Dictionary<VoidSSTable>::ord_to_term_budgeted` accepts a fallible reservation callback before encoded I/O and decode workspace allocation. |
+| Guard-carrying result | A successful lookup returns the decoded term together with the caller's reservation guard, preserving the caller's accounting lifetime. |
+| Typed SSTable values | The upstream format separates prefix-compressed keys from value-specific codecs. |
+| Block-level navigation | SSTable indexes identify blocks; dictionaries and streamers expose point and ordered access paths. |
+
+```mermaid
+flowchart LR
+    O["Term ordinal"] --> A["Reservation callback"]
+    A --> D["Encoded block and decode workspace"]
+    D --> R["Decoded term + reservation guard"]
+    X["Reservation failure"] -.-> A
+```
+
+The reservation callback is supplied by the consumer. This patch is not a global allocator or a complete memory-budgeting runtime. See the [dictionary implementation](src/dictionary.rs), [block reader](src/block_reader.rs), and [public exports](src/lib.rs).
+
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+    O["Term ordinal"] --> A["Reservation callback"]
+    A --> D["Encoded block and decode workspace"]
+    D --> R["Decoded term + reservation guard"]
+    X["Reservation failure"] -.-> A
+```
 
 ## Quanta extension
 
